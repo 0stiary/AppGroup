@@ -66,6 +66,7 @@ namespace AppGroup {
         public const int SW_RESTORE = 9;
         public const int SW_SHOWNOACTIVATE = 4;
 
+        public const uint WM_DPICHANGED = 0x02E0;
         public const uint SWP_NOSIZE = 0x0001;
         public const uint SWP_NOMOVE = 0x0002;
         public const uint SWP_NOZORDER = 0x0004;
