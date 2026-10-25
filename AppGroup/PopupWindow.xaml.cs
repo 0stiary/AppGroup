@@ -1728,9 +1728,10 @@ _ = Task.WhenAll(iconTasks);
         private async void GridView_RightTapped(object sender, RightTappedRoutedEventArgs e) {
             var item = (e.OriginalSource as FrameworkElement)?.DataContext as PopupItem;
             if (item != null) {
-                MenuFlyout flyout = await CreateItemFlyoutAsync();
-                flyout.ShowAt(_gridView, e.GetPosition(_gridView));
                 _clickedItem = item;
+                var position = e.GetPosition(_gridView);
+                MenuFlyout flyout = await CreateItemFlyoutAsync(item);
+                flyout.ShowAt(_gridView, position);
             }
         }
 
@@ -1978,8 +1979,11 @@ _ = Task.WhenAll(iconTasks);
         //    return flyout;
         //}
 
-        private async Task<MenuFlyout> CreateItemFlyoutAsync() {
+        private async Task<MenuFlyout> CreateItemFlyoutAsync(PopupItem item) {
             MenuFlyout flyout = new MenuFlyout();
+
+            if (!item.IsSubgroup && AddJumpListItems(flyout, await ReadJumpListAsync(item.Path), item.Path))
+                flyout.Items.Add(new MenuFlyoutSeparator());
 
             var openItem = new MenuFlyoutItem { Text = "Open", Icon = new FontIcon { Glyph = "\ue8a7" } };
             openItem.Click += OpenItem_Click;
@@ -2008,6 +2012,51 @@ _ = Task.WhenAll(iconTasks);
 
             return flyout;
         }
+        /// <summary>Reads on an STA thread: the shell's jump list objects are apartment-threaded.</summary>
+        private static Task<List<JumpListCategory>> ReadJumpListAsync(string path) {
+            var tcs = new TaskCompletionSource<List<JumpListCategory>>();
+            var thread = new Thread(() => {
+                try {
+                    tcs.SetResult(JumpListReader.Read(JumpListReader.ResolveAppId(path)));
+                }
+                catch (Exception ex) {
+                    Debug.WriteLine($"Failed to read jump list for {path}: {ex.Message}");
+                    tcs.SetResult(new List<JumpListCategory>());
+                }
+            }) { IsBackground = true };
+            thread.SetApartmentState(ApartmentState.STA);
+            thread.Start();
+            return tcs.Task;
+        }
+
+        /// <summary>Adds the categories the taskbar shows for this app: Pinned, Recent and custom ones, Tasks.</summary>
+        private bool AddJumpListItems(MenuFlyout flyout, List<JumpListCategory> categories, string ownerPath) {
+            bool any = false;
+            foreach (var category in categories) {
+                if (any) flyout.Items.Add(new MenuFlyoutSeparator());
+                flyout.Items.Add(new MenuFlyoutItem { Text = category.Name, IsEnabled = false });
+                foreach (var entry in category.Items) {
+                    var menuItem = new MenuFlyoutItem { Text = entry.Title };
+                    if (category.IsPinned) menuItem.Icon = new FontIcon { Glyph = "" };
+                    string tip = string.IsNullOrEmpty(entry.Arguments) ? entry.TargetPath : $"{entry.TargetPath} {entry.Arguments}";
+                    if (!string.IsNullOrEmpty(tip)) ToolTipService.SetToolTip(menuItem, tip);
+                    var captured = entry;
+                    menuItem.Click += (s, e) => {
+                        try {
+                            JumpListReader.Launch(captured, ownerPath);
+                        }
+                        catch (Exception ex) {
+                            Debug.WriteLine($"Failed to launch jump list entry {captured.Title}: {ex.Message}");
+                            ShowErrorDialog($"Failed to launch {captured.Title}: {ex.Message}");
+                        }
+                    };
+                    flyout.Items.Add(menuItem);
+                }
+                any = true;
+            }
+            return any;
+        }
+
         private async void launchAllGroup_Click(object sender, RoutedEventArgs e) {
             if (!string.IsNullOrEmpty(_groupFilter)) {
                 var matchingGroup = _groups?.Values.FirstOrDefault(g =>
