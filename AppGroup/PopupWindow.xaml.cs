@@ -136,7 +136,6 @@ namespace AppGroup {
         private Storyboard _entranceStoryboard;
         private bool _entranceStarted = false;  
         private bool _wasLaunchedFromTaskbar = false;
-        private SizeInt32? _targetSize;
 
         private int _isLoadingConfig = 0;
         private bool _isFlyoutOpen = false;
@@ -518,15 +517,6 @@ namespace AppGroup {
                     Debug.WriteLine($"Error in WM_COPYDATA handler: {ex.Message}");
                 }
             }
-            if (msg == NativeMethods.WM_DPICHANGED && _targetSize.HasValue) {
-                // The popup is parked off-screen, which can be on a monitor with another scale, and then
-                // moved to its target monitor. Per-monitor DPI awareness rescales it on each move, but its
-                // size was already computed for the target monitor's scale, so put that size back.
-                IntPtr result = NativeMethods.DefSubclassProc(hWnd, msg, wParam, lParam);
-                NativeMethods.SetWindowPos(hWnd, IntPtr.Zero, 0, 0, _targetSize.Value.Width, _targetSize.Value.Height,
-                    NativeMethods.SWP_NOMOVE | NativeMethods.SWP_NOZORDER | NativeMethods.SWP_NOACTIVATE);
-                return result;
-            }
             return NativeMethods.DefSubclassProc(hWnd, msg, wParam, lParam);
         }
 
@@ -891,7 +881,6 @@ namespace AppGroup {
             if (finalHeight > maxAllowedHeight) finalHeight = maxAllowedHeight;
 
             NativeMethods.PositionWindowOffScreen(this.GetWindowHandle());
-            _targetSize = new SizeInt32(finalWidth, finalHeight);
             _windowHelper.SetSize(finalWidth, finalHeight);
             _windowHelper.IsAlwaysOnTop = true;
             if (_parentPopup != null) {
